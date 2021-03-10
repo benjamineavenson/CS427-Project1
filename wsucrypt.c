@@ -7,6 +7,7 @@
 void encrypt(unsigned long long int, FILE*, FILE*);
 void decrypt(unsigned long long int, FILE*, FILE*);
 void encryptBlock(unsigned long long int, unsigned long long int, FILE*);
+void decryptBlock(unsigned long long int, unsigned long long int, FILE*);
 
 void f(unsigned int, unsigned int, int, unsigned long long int*, unsigned int*, unsigned int*, bool);
 unsigned int k(int, unsigned long long int*, bool);
@@ -69,6 +70,7 @@ int main(int argc, char** argv){
       keyString[i] = c;
     } else {
       printf("Invalid key. Key must be 16 hex characters. Terminating...\n");
+      exit(-1);
     }
   }
   keyString[16] = '\0';
@@ -78,7 +80,7 @@ int main(int argc, char** argv){
   if(encryptMode){
     encrypt(key, in, out);
   } else {
- //   decrypt(key, in, out);
+    decrypt(key, in, out);
   }
 
   fclose(in);
@@ -120,9 +122,26 @@ unsigned int rotateRightCarry16(unsigned int num) {
 
 void encrypt(unsigned long long int key, FILE* in, FILE* out){
   unsigned long long int block;
+  int numRead = 0;
   while(fread(&block, 8, 1, in) != 0){
+  //  printf("block: %llx\n", block);
     encryptBlock(key, block, out);
+    block = 0;
+    numRead++;
   }
+ // printf("endblock: %llx\n", block);
+
+  fseek(in, numRead*8, SEEK_SET);
+  int padding = 8;
+  char myNull;
+  while(fread(&myNull, 1, 1, in) != 0){
+    padding--;
+  }
+ // printf("padding: %i\n", padding);
+  block = block << ((padding) * 8);
+ // printf("endblock shifted: %llx\n", block);
+  encryptBlock(key, block, out);
+  
 }
 
 void encryptBlock(unsigned long long int key, unsigned long long int block, FILE* out){
@@ -151,8 +170,6 @@ void encryptBlock(unsigned long long int key, unsigned long long int block, FILE
 
   for(round = 0; round != 16; round++){
     f(r0, r1, round, &key, &f0, &f1, 1);
-//    printf("round: %i\n f0: %x\n f1: %x\n", round, f0, f1);
-    printf("round: %i\n r3: %x\n f1: %x\n", round, r3, f1);
     temp0 = rotateRightCarry16(r2 ^ f0);
     temp1 = rotateLeftCarry16(r3) ^ f1;
     r2 = r0;
@@ -162,7 +179,6 @@ void encryptBlock(unsigned long long int key, unsigned long long int block, FILE
     f0 = 0;
     f1 = 0;
 
-    printf("%x %x %x %x\n", r0, r1, r2, r3);
   }
     
   unsigned int y0 = r2;
@@ -175,16 +191,101 @@ void encryptBlock(unsigned long long int key, unsigned long long int block, FILE
   unsigned int c2 = y2 ^ k2;
   unsigned int c3 = y3 ^ k3;
 
-  printf("%x %x %x %x\n", c0, c1, c2, c3);
+ // printf("%x %x %x %x\n", c0, c1, c2, c3);
+
+  fprintf(out, "%x%x%x%x", c0, c1, c2, c3);
 
   return;
 }
 
-unsigned int k(int x, unsigned long long int* key, bool mode){
-  if(mode){
+void decrypt(unsigned long long int key, FILE* in, FILE* out){
+  /*char blockString[17];
+  char c;
+  unsigned long long int block;
+
+  fscanf(in, "%c", &c);
+  while(c != EOF){
+    blockString[0] = c;
+    for(int i = 1; i != 16; i++){
+      fscanf(in, "%c", &c);
+      if(c == '0' || c == '1' || c == '2' || c == '3' || c == '4' || c == '5' || c == '6' || c == '7' || c == '8' || c == '9' || c == 'a' || c == 'b' || c == 'c' || c == 'd' || c == 'e' || c == 'f'){
+        blockString[i] = c;
+      } else {
+        printf("Invalid ciphertext. Ciphtertext must consist of one or more 64 hex character blocks. Terminating...\n");
+        exit(-1);
+      }
+    }
+    blockString[16] = '\0';
+
+    block = strtoull(blockString, NULL, 16);
+    
+    decryptBlock(key, block, out);
+
+    fscanf(in, "%c", &c);
+  }*/
+
+  decryptBlock(key, 0x9a76d6d578c44766, out);
+}
+
+void decryptBlock(unsigned long long int key, unsigned long long int block, FILE* out){
+  unsigned int k0 = (key & 0xffff000000000000) >> (12*4);
+  unsigned int k1 = (key & 0x0000ffff00000000) >> (8*4);
+  unsigned int k2 = (key & 0x00000000ffff0000) >> (4*4);
+  unsigned int k3 = key & 0x000000000000ffff;
+
+  unsigned int w0 = (block & 0xffff000000000000) >> (12*4);
+  unsigned int w1 = (block & 0x0000ffff00000000) >> (8*4);
+  unsigned int w2 = (block & 0x00000000ffff0000) >> (4*4);
+  unsigned int w3 = block & 0x000000000000ffff;
+
+  unsigned int r0 = k0 ^ w0;
+  unsigned int r1 = k1 ^ w1;
+  unsigned int r2 = k2 ^ w2;
+  unsigned int r3 = k3 ^ w3;
+
+  unsigned int f0;
+  unsigned int f1;
+
+  unsigned int temp0;
+  unsigned int temp1;
+
+  int round;
+
+  for(round = 0; round != 16; round++){
+    f(r0, r1, round, &key, &f0, &f1, 0);
+    temp0 = rotateLeftCarry16(r2) ^ f0;
+    temp1 = rotateRightCarry16(r3 ^ f1);
+    r2 = r0;
+    r3 = r1;
+    r0 = temp0;
+    r1 = temp1;
+//    printf("round: %i\n r0: %x\n r1: %x\n r2: %x\n r3: %x\n f0: %x\n f1: %x\n", round, r0, r1, r2, r3, f0, f1);
+    f0 = 0;
+    f1 = 0;
+  }
+
+  unsigned int y0 = r2;
+  unsigned int y1 = r3;
+  unsigned int y2 = r0;
+  unsigned int y3 = r1;
+
+  unsigned int c0 = y0 ^ k0;
+  unsigned int c1 = y1 ^ k1;
+  unsigned int c2 = y2 ^ k2;
+  unsigned int c3 = y3 ^ k3;
+
+  printf("%x %x %x %x\n", c0, c1, c2, c3);
+
+//  fprintf(out, "%x%x%x%x", c0, c1, c2, c3);
+
+  return;
+
+
+}
+
+unsigned int k(int x, unsigned long long int* key, bool encryptMode){
+  if(encryptMode){
     *key = rotateLeftCarry64(*key);
-  } else {
-    *key = rotateRightCarry64(*key);
   }
   
   x = x%8;
@@ -216,6 +317,11 @@ unsigned int k(int x, unsigned long long int* key, bool mode){
       break;
     }
 
+  if(!encryptMode){
+    *key = rotateRightCarry64(*key);
+  }
+
+//  printf("%x\n", val);
   return val;
 }
 
@@ -231,7 +337,7 @@ void f(unsigned int r0, unsigned int r1, int round, unsigned long long int* key,
   *f0 = (((k0 << 8) | k1) + t0 + 2*t1)%0x10000;
   *f1 = (((k2 << 8) | k3) + 2*t0 + t1)%0x10000;
   
-  printf("round: %i\n t0: %x\n t1: %x\n k0: %x\n k1: %x\n k2: %x\n k3: %x\n f0: %x\n f1: %x\n", round, t0, t1, k0, k1, k2, k3, *f0, *f1);
+ // printf("round: %i\n t0: %x\n t1: %x\n k0: %x\n k1: %x\n k2: %x\n k3: %x\n f0: %x\n f1: %x\n", round, t0, t1, k0, k1, k2, k3, *f0, *f1);
 
   return;
 }
@@ -263,7 +369,7 @@ unsigned int g(unsigned int w, int round, unsigned long long int* key, bool mode
 
     unsigned int g = (g5 << 8 | g6);
     
-    printf("round: %i\n k0: %x\n k1: %x\n k2: %x\n k3: %x\n w: %x\n g1: %x\n g2: %x\n g3: %x\n g4: %x\n g5: %x\n g6: %x\n g: %x\n", round, k0, k1, k2, k3, w, g1, g2, g3, g4, g5, g6, g);
+//    printf("round: %i\n k0: %x\n k1: %x\n k2: %x\n k3: %x\n w: %x\n g1: %x\n g2: %x\n g3: %x\n g4: %x\n g5: %x\n g6: %x\n g: %x\n", round, k0, k1, k2, k3, w, g1, g2, g3, g4, g5, g6, g);
     return g;
 }
 
