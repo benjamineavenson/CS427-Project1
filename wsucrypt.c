@@ -5,9 +5,9 @@
 #include <stdlib.h>
 
 void encrypt(unsigned long long int, FILE*, FILE*);
-void decrypt(unsigned long long int, FILE*, FILE*);
+void decrypt(unsigned long long int, FILE*, FILE*, bool);
 void encryptBlock(unsigned long long int, unsigned long long int, FILE*);
-void decryptBlock(unsigned long long int, unsigned long long int, FILE*);
+void decryptBlock(unsigned long long int, unsigned long long int, FILE*, bool);
 
 void f(unsigned int, unsigned int, int, unsigned long long int*, unsigned int*, unsigned int*, bool);
 unsigned int k(int, unsigned long long int*, bool);
@@ -22,6 +22,7 @@ unsigned int rotateRightCarry16(unsigned int);
 int main(int argc, char** argv){
   
   bool encryptMode = 1;
+  bool swapBytes = 1;
   FILE* keyFile = NULL;
   FILE* in = NULL;
   FILE* out = NULL;
@@ -50,6 +51,8 @@ int main(int argc, char** argv){
         exit(-1);
       }
       out = fopen(argv[++argi], "w");
+    } else if(strcmp(argv[argi], "-disable-fix") == 0) {
+      swapBytes = 0;
     } else {
       printf("Flag not recognized: %s\nIf encrypting use format: ./wsu-crypt -e -k key.txt -in plaintext.txt -out ciphertext.txt\nIf decrypting use format: ./wsu-crypt -d -k key.txt -in ciphertext.txt -out decrypted.txt\n\nTerminating...\n", argv[argi]);
       exit(-1);
@@ -80,7 +83,7 @@ int main(int argc, char** argv){
   if(encryptMode){
     encrypt(key, in, out);
   } else {
-    decrypt(key, in, out);
+    decrypt(key, in, out, swapBytes);
   }
 
   fclose(in);
@@ -200,7 +203,7 @@ void encryptBlock(unsigned long long int key, unsigned long long int block, FILE
   return;
 }
 
-void decrypt(unsigned long long int key, FILE* in, FILE* out){
+void decrypt(unsigned long long int key, FILE* in, FILE* out, bool swapBytes){
   char blockString[17];
   char c;
   unsigned long long int block;
@@ -220,11 +223,11 @@ void decrypt(unsigned long long int key, FILE* in, FILE* out){
 
     block = strtoull(blockString, NULL, 16);
     
-    decryptBlock(key, block, out);
+    decryptBlock(key, block, out, swapBytes);
   }
 }
 
-void decryptBlock(unsigned long long int key, unsigned long long int block, FILE* out){
+void decryptBlock(unsigned long long int key, unsigned long long int block, FILE* out, bool swapBytes){
   unsigned int k0 = (key & 0xffff000000000000) >> (12*4);
   unsigned int k1 = (key & 0x0000ffff00000000) >> (8*4);
   unsigned int k2 = (key & 0x00000000ffff0000) >> (4*4);
@@ -271,12 +274,19 @@ void decryptBlock(unsigned long long int key, unsigned long long int block, FILE
   unsigned int c2 = y2 ^ k2;
   unsigned int c3 = y3 ^ k3;
 
-  printf("%x %x %x %x\n", c0, c1, c2, c3);
+  //printf("%x %x %x %x\n", c0, c1, c2, c3);
 
-  fwrite(&c3, 2, 1, out);
-  fwrite(&c2, 2, 1, out);
-  fwrite(&c1, 2, 1, out);
-  fwrite(&c0, 2, 1, out);
+  if(swapBytes){
+    fwrite(&c3, 2, 1, out);
+    fwrite(&c2, 2, 1, out);
+    fwrite(&c1, 2, 1, out);
+    fwrite(&c0, 2, 1, out);
+  } else {
+    fwrite(&c0, 2, 1, out);
+    fwrite(&c1, 2, 1, out);
+    fwrite(&c2, 2, 1, out);
+    fwrite(&c3, 2, 1, out);
+  }
 
   return;
 
