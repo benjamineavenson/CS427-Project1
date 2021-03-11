@@ -124,7 +124,7 @@ void encrypt(unsigned long long int key, FILE* in, FILE* out){
   unsigned long long int block;
   int numRead = 0;
   while(fread(&block, 8, 1, in) != 0){
-  //  printf("block: %llx\n", block);
+    printf("block: %llx\n", block);
     encryptBlock(key, block, out);
     block = 0;
     numRead++;
@@ -138,9 +138,11 @@ void encrypt(unsigned long long int key, FILE* in, FILE* out){
     padding--;
   }
  // printf("padding: %i\n", padding);
-  block = block << ((padding) * 8);
- // printf("endblock shifted: %llx\n", block);
-  encryptBlock(key, block, out);
+  if(padding != 8){
+    block = block << ((padding) * 8);
+   // printf("endblock shifted: %llx\n", block);
+    encryptBlock(key, block, out);
+  }
   
 }
 
@@ -191,20 +193,19 @@ void encryptBlock(unsigned long long int key, unsigned long long int block, FILE
   unsigned int c2 = y2 ^ k2;
   unsigned int c3 = y3 ^ k3;
 
- // printf("%x %x %x %x\n", c0, c1, c2, c3);
+//  printf("%u %u %u %u\n", c0, c1, c2, c3);
 
-  fprintf(out, "%x%x%x%x", c0, c1, c2, c3);
+  fprintf(out, "%04x%04x%04x%04x", c0, c1, c2, c3);
 
   return;
 }
 
 void decrypt(unsigned long long int key, FILE* in, FILE* out){
-  /*char blockString[17];
+  char blockString[17];
   char c;
   unsigned long long int block;
 
-  fscanf(in, "%c", &c);
-  while(c != EOF){
+  while(fscanf(in, "%c", &c) != EOF){
     blockString[0] = c;
     for(int i = 1; i != 16; i++){
       fscanf(in, "%c", &c);
@@ -220,11 +221,7 @@ void decrypt(unsigned long long int key, FILE* in, FILE* out){
     block = strtoull(blockString, NULL, 16);
     
     decryptBlock(key, block, out);
-
-    fscanf(in, "%c", &c);
-  }*/
-
-  decryptBlock(key, 0x9a76d6d578c44766, out);
+  }
 }
 
 void decryptBlock(unsigned long long int key, unsigned long long int block, FILE* out){
@@ -251,7 +248,7 @@ void decryptBlock(unsigned long long int key, unsigned long long int block, FILE
 
   int round;
 
-  for(round = 0; round != 16; round++){
+  for(round = 15; round != -1; round--){
     f(r0, r1, round, &key, &f0, &f1, 0);
     temp0 = rotateLeftCarry16(r2) ^ f0;
     temp1 = rotateRightCarry16(r3 ^ f1);
@@ -276,7 +273,10 @@ void decryptBlock(unsigned long long int key, unsigned long long int block, FILE
 
   printf("%x %x %x %x\n", c0, c1, c2, c3);
 
-//  fprintf(out, "%x%x%x%x", c0, c1, c2, c3);
+  fwrite(&c3, 2, 1, out);
+  fwrite(&c2, 2, 1, out);
+  fwrite(&c1, 2, 1, out);
+  fwrite(&c0, 2, 1, out);
 
   return;
 
@@ -326,13 +326,32 @@ unsigned int k(int x, unsigned long long int* key, bool encryptMode){
 }
 
 void f(unsigned int r0, unsigned int r1, int round, unsigned long long int* key, unsigned int* f0, unsigned int* f1, bool mode) {
-  unsigned int t0 = g(r0, round, key, mode);
-  unsigned int t1 = g(r1, round, key, mode);
+  unsigned int k0;
+  unsigned int k1;
+  unsigned int k2;
+  unsigned int k3;
   
-  unsigned int k0 = k(4*round, key, mode);
-  unsigned int k1 = k(4*round + 1, key, mode);
-  unsigned int k2 = k(4*round + 2, key, mode);
-  unsigned int k3 = k(4*round + 3, key, mode);
+  unsigned int t0;
+  unsigned int t1;
+  
+  if(mode){ //encrypting
+    t0 = g(r0, round, key, mode);
+    t1 = g(r1, round, key, mode);
+
+    k0 = k(4*round, key, mode);
+    k1 = k(4*round + 1, key, mode);
+    k2 = k(4*round + 2, key, mode);
+    k3 = k(4*round + 3, key, mode);
+
+  } else {  //decrypting
+    k3 = k(4*round + 3, key, mode);
+    k2 = k(4*round + 2, key, mode);
+    k1 = k(4*round + 1, key, mode);
+    k0 = k(4*round, key, mode);
+
+    t1 = g(r1, round, key, mode);
+    t0 = g(r0, round, key, mode);
+  }
 
   *f0 = (((k0 << 8) | k1) + t0 + 2*t1)%0x10000;
   *f1 = (((k2 << 8) | k3) + 2*t0 + t1)%0x10000;
@@ -346,10 +365,22 @@ unsigned int g(unsigned int w, int round, unsigned long long int* key, bool mode
     unsigned int g1 = (w & 0xff00) >> 8;
     unsigned int g2 = w & 0x00ff;
     
-    unsigned int k0 = k(4*round, key, mode);
-    unsigned int k1 = k(4*round+1, key, mode);
-    unsigned int k2 = k(4*round+2, key, mode);
-    unsigned int k3 = k(4*round+3, key, mode);
+    unsigned int k0;
+    unsigned int k1;
+    unsigned int k2;
+    unsigned int k3;
+
+    if(mode) { //encrypting
+      k0 = k(4*round, key, mode);
+      k1 = k(4*round+1, key, mode);
+      k2 = k(4*round+2, key, mode);
+      k3 = k(4*round+3, key, mode);
+    } else {  //decrypting
+      k3 = k(4*round+3, key, mode);
+      k2 = k(4*round+2, key, mode);
+      k1 = k(4*round+1, key, mode);
+      k0 = k(4*round, key, mode);
+    }
 
     unsigned int g3 = g2 ^ k0;
     g3 = skipjack(g3);
